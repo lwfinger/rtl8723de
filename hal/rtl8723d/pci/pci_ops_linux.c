@@ -38,10 +38,15 @@ static int rtl8723de_init_rx_ring(_adapter *padapter)
 	/* rx_queue_idx 1:RX_CMD_QUEUE */
 	for (rx_queue_idx = 0; rx_queue_idx < 1/*RX_MAX_QUEUE*/; rx_queue_idx++) {
 		precvpriv->rx_ring[rx_queue_idx].buf_desc =
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			dma_alloc_coherent(&pdev->dev,
+			sizeof(*precvpriv->rx_ring[rx_queue_idx].buf_desc) * precvpriv->rxringcount,
+				     &precvpriv->rx_ring[rx_queue_idx].dma, GFP_KERNEL);
+#else
 			pci_alloc_consistent(pdev,
 			sizeof(*precvpriv->rx_ring[rx_queue_idx].buf_desc) * precvpriv->rxringcount,
 				     &precvpriv->rx_ring[rx_queue_idx].dma);
-
+#endif
 		if (!precvpriv->rx_ring[rx_queue_idx].buf_desc
 		    || (unsigned long)precvpriv->rx_ring[rx_queue_idx].buf_desc & 0xFF) {
 			RTW_INFO("Cannot allocate RX ring\n");
@@ -66,9 +71,15 @@ static int rtl8723de_init_rx_ring(_adapter *padapter)
 			mapping = (dma_addr_t *)skb->cb;
 
 			/* just set skb->cb to mapping addr for pci_unmap_single use */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			*mapping = dma_map_single(&pdev->dev, skb_tail_pointer(skb),
+						  precvpriv->rxbuffersize,
+						  DMA_FROM_DEVICE);
+#else
 			*mapping = pci_map_single(pdev, skb_tail_pointer(skb),
 						  precvpriv->rxbuffersize,
 						  PCI_DMA_FROMDEVICE);
+#endif
 
 			/* Reset FS, LS, Total len */
 			SET_RX_BUFFER_DESC_LS_8723D(rx_bufdesc, 0);
@@ -101,14 +112,25 @@ static void rtl8723de_free_rx_ring(_adapter *padapter)
 			if (!skb)
 				continue;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			dma_unmap_single(&pdev->dev,
+					 *((dma_addr_t *) skb->cb),
+					 precvpriv->rxbuffersize,
+					 DMA_FROM_DEVICE);
+#else
 			pci_unmap_single(pdev,
 					 *((dma_addr_t *) skb->cb),
 					 precvpriv->rxbuffersize,
 					 PCI_DMA_FROMDEVICE);
+#endif
 			rtw_skb_free(skb);
 		}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+		dma_free_coherent(&pdev->dev,
+#else
 		pci_free_consistent(pdev,
+#endif
 			    sizeof(*precvpriv->rx_ring[rx_queue_idx].buf_desc) *
 				    precvpriv->rxringcount,
 				    precvpriv->rx_ring[rx_queue_idx].buf_desc,
@@ -117,7 +139,6 @@ static void rtl8723de_free_rx_ring(_adapter *padapter)
 	}
 
 }
-
 
 static int rtl8723de_init_tx_ring(_adapter *padapter, unsigned int prio, unsigned int entries)
 {
@@ -130,7 +151,11 @@ static int rtl8723de_init_tx_ring(_adapter *padapter, unsigned int prio, unsigne
 
 
 	/* RTW_INFO("%s entries num:%d\n", __func__, entries); */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	ring = dma_alloc_coherent(&pdev->dev, sizeof(*ring) * entries, &dma, GFP_KERNEL);
+#else
 	ring = pci_alloc_consistent(pdev, sizeof(*ring) * entries, &dma);
+#endif
 	if (!ring || (unsigned long)ring & 0xFF) {
 		RTW_INFO("Cannot allocate TX ring (prio = %d)\n", prio);
 		return _FAIL;
@@ -176,13 +201,21 @@ static void rtl8723de_free_tx_ring(_adapter *padapter, unsigned int prio)
 			mapping = GET_TX_BUFF_DESC_ADDR_LOW_0_8723D(tx_bufdesc);
 			mapping |= (dma_addr_t)GET_TX_BUFF_DESC_ADDR_HIGH_0_8723D(tx_bufdesc) << 32;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			dma_unmap_single(&pdev->dev, mapping, pxmitbuf->len, DMA_TO_DEVICE);
+#else
 			pci_unmap_single(pdev, mapping, pxmitbuf->len, PCI_DMA_TODEVICE);
+#endif
 			rtw_free_xmitbuf(pxmitpriv, pxmitbuf);
 		} else
 			RTW_INFO("%s(): qlen(%d) is not zero, but have xmitbuf in pending queue\n", __func__, ring->qlen);
 	}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	dma_free_coherent(&pdev->dev, sizeof(*ring->buf_desc) * ring->entries, ring->buf_desc, ring->dma);
+#else
 	pci_free_consistent(pdev, sizeof(*ring->buf_desc) * ring->entries, ring->buf_desc, ring->dma);
+#endif
 	ring->buf_desc = NULL;
 
 }
@@ -308,7 +341,11 @@ void rtl8723de_reset_desc_ring(_adapter *padapter)
 					mapping = GET_TX_BUFF_DESC_ADDR_LOW_0_8723D(tx_bufdesc);
 					mapping |= (dma_addr_t)GET_TX_BUFF_DESC_ADDR_HIGH_0_8723D(tx_bufdesc) << 32;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+					dma_unmap_single(&pdvobjpriv->ppcidev->dev, mapping, pxmitbuf->len, DMA_TO_DEVICE);
+#else
 					pci_unmap_single(pdvobjpriv->ppcidev, mapping, pxmitbuf->len, PCI_DMA_TODEVICE);
+#endif
 					rtw_free_xmitbuf(pxmitpriv, pxmitbuf);
 				} else
 					RTW_INFO("%s(): qlen(%d) is not zero, but have xmitbuf in pending queue\n", __func__, ring->qlen);
@@ -427,7 +464,11 @@ static void rtl8723de_tx_isr(PADAPTER Adapter, int prio)
 			mapping = GET_TX_BUFF_DESC_ADDR_LOW_0_8723D(tx_bufdesc);
 			mapping |= (dma_addr_t)GET_TX_BUFF_DESC_ADDR_HIGH_0_8723D(tx_bufdesc) << 32;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			dma_unmap_single(&pdvobjpriv->ppcidev->dev, mapping, pxmitbuf->len, DMA_TO_DEVICE);
+#else
 			pci_unmap_single(pdvobjpriv->ppcidev, mapping, pxmitbuf->len, PCI_DMA_TODEVICE);
+#endif
 			rtw_sctx_done(&pxmitbuf->sctx);
 			rtw_free_xmitbuf(&(pxmitbuf->padapter->xmitpriv), pxmitbuf);
 		} else
@@ -711,10 +752,17 @@ static void rtl8723de_rx_mpdu(_adapter *padapter)
 			_rtw_init_listhead(&precvframe->u.hdr.list);
 			precvframe->u.hdr.len = 0;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			dma_unmap_single(&pdvobjpriv->ppcidev->dev,
+					 *((dma_addr_t *)skb->cb),
+					 precvpriv->rxbuffersize,
+					 DMA_FROM_DEVICE);
+#else
 			pci_unmap_single(pdvobjpriv->ppcidev,
 					 *((dma_addr_t *)skb->cb),
 					 precvpriv->rxbuffersize,
 					 PCI_DMA_FROMDEVICE);
+#endif
 
 			rtl8723d_query_rx_desc_status(precvframe, skb->data);
 			pattrib = &precvframe->u.hdr.attrib;
@@ -729,7 +777,11 @@ static void rtl8723de_rx_mpdu(_adapter *padapter)
 				(skb->data + RXDESC_SIZE + pattrib->drvinfo_sz + pattrib->shift_sz), skb) == _FAIL) {
 				rtw_free_recvframe(precvframe, &precvpriv->free_recv_queue);
 				RTW_INFO("rtl8723de_rx_mpdu:can not allocate memory for skb copy\n");
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+				*((dma_addr_t *) skb->cb) = dma_map_single(&pdvobjpriv->ppcidev->dev, skb_tail_pointer(skb), precvpriv->rxbuffersize, DMA_FROM_DEVICE);
+#else
 				*((dma_addr_t *) skb->cb) = pci_map_single(pdvobjpriv->ppcidev, skb_tail_pointer(skb), precvpriv->rxbuffersize, PCI_DMA_FROMDEVICE);
+#endif
 				goto done;
 			}
 
@@ -759,7 +811,11 @@ static void rtl8723de_rx_mpdu(_adapter *padapter)
 				rtw_free_recvframe(precvframe, pfree_recv_queue);
 			}
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+			*((dma_addr_t *) skb->cb) = dma_map_single(&pdvobjpriv->ppcidev->dev, skb_tail_pointer(skb), precvpriv->rxbuffersize, DMA_FROM_DEVICE);
+#else
 			*((dma_addr_t *) skb->cb) = pci_map_single(pdvobjpriv->ppcidev, skb_tail_pointer(skb), precvpriv->rxbuffersize, PCI_DMA_FROMDEVICE);
+#endif
 		}
 done:
 

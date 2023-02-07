@@ -31,11 +31,11 @@ s32 rtl8723de_init_recv_priv(_adapter *padapter)
 
 #ifdef PLATFORM_LINUX
 	tasklet_init(&precvpriv->recv_tasklet,
-		     (void(*)(unsigned long))rtl8723de_recv_tasklet,
+		     (void(*))rtl8723de_recv_tasklet,
 		     (unsigned long)padapter);
 
 	tasklet_init(&precvpriv->irq_prepare_beacon_tasklet,
-		     (void(*)(unsigned long))rtl8723de_prepare_bcn_tasklet,
+		     (void(*))rtl8723de_prepare_bcn_tasklet,
 		     (unsigned long)padapter);
 #endif
 

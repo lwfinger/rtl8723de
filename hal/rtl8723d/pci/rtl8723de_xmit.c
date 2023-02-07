@@ -69,7 +69,7 @@ s32	rtl8723de_init_xmit_priv(_adapter *padapter)
 
 #ifdef PLATFORM_LINUX
 	tasklet_init(&pxmitpriv->xmit_tasklet,
-		     (void(*)(unsigned long))rtl8723de_xmit_tasklet,
+		     (void(*))rtl8723de_xmit_tasklet,
 		     (unsigned long)padapter);
 #endif
 
@@ -190,7 +190,11 @@ static void update_txbufdesc(struct xmit_frame *pxmitframe, u8 *pmem, s32 sz)
 	u16				page_size_length = 0;
 	HAL_DATA_TYPE	*pHalData = GET_HAL_DATA(padapter);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	mapping = dma_map_single(&pdvobjpriv->ppcidev->dev, pxmitframe->buf_addr , sz + TX_WIFI_INFO_SIZE, DMA_TO_DEVICE);
+#else
 	mapping = pci_map_single(pdvobjpriv->ppcidev, pxmitframe->buf_addr , sz + TX_WIFI_INFO_SIZE, PCI_DMA_TODEVICE);
+#endif
 
 	/* Calculate page size. Total buffer length including TX_WIFI_INFO and PacketLen */
 	page_size_length = (sz + TX_WIFI_INFO_SIZE - 1) / PAGE_SIZE_TX_8723D + 1;
